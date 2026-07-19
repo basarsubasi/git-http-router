@@ -37,6 +37,7 @@ struct Args {
 struct AppState {
     root: PathBuf,
     expected_auth: Option<String>,
+    expected_bearer_auth: Option<String>,
     expected_username: Option<String>,
 }
 
@@ -45,14 +46,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     let root = std::fs::canonicalize(&args.root).unwrap_or_else(|_| PathBuf::from(&args.root));
 
-    let (expected_auth, expected_username) = if let (Some(u), Some(p)) = (args.username, args.password) {
+    let (expected_auth, expected_bearer_auth, expected_username) = if let (Some(u), Some(p)) = (args.username, args.password) {
         use base64::{Engine as _, engine::general_purpose::STANDARD};
-        (Some(format!("Basic {}", STANDARD.encode(format!("{}:{}", &u, p)))), Some(u))
+        (
+            Some(format!("Basic {}", STANDARD.encode(format!("{}:{}", &u, &p)))), 
+            Some(format!("Bearer {}", p)),
+            Some(u)
+        )
     } else {
-        (None, None)
+        (None, None, None)
     };
 
-    let state = Arc::new(AppState { root: root.clone(), expected_auth, expected_username });
+    let state = Arc::new(AppState { root: root.clone(), expected_auth, expected_bearer_auth, expected_username });
 
     let app = Router::new()
         .route("/{*path}", any(handle_git_cgi))
@@ -79,7 +84,7 @@ async fn handle_git_cgi(
             .and_then(|v| v.to_str().ok())
             .unwrap_or("");
         
-        if auth_header != expected_auth {
+        if auth_header != expected_auth && auth_header != state.expected_bearer_auth.as_deref().unwrap_or("") {
             let mut response = Response::builder()
                 .status(StatusCode::UNAUTHORIZED)
                 .body(Body::from("Unauthorized"))
