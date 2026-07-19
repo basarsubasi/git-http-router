@@ -57,7 +57,10 @@ async fn handle_git_cgi(
 ) -> Result<Response, StatusCode> {
     let method = request.method().as_str().to_string();
     let uri = request.uri().clone();
-    let path_info = uri.path().to_string();
+    let mut path_info = uri.path().to_string();
+    while path_info.contains("//") {
+        path_info = path_info.replace("//", "/");
+    }
     let query_string = uri.query().unwrap_or("").to_string();
     
     let content_type = request
