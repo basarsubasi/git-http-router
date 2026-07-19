@@ -37,6 +37,7 @@ struct Args {
 struct AppState {
     root: PathBuf,
     expected_auth: Option<String>,
+    expected_username: Option<String>,
 }
 
 #[tokio::main]
@@ -44,14 +45,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     let root = std::fs::canonicalize(&args.root).unwrap_or_else(|_| PathBuf::from(&args.root));
 
-    let expected_auth = if let (Some(u), Some(p)) = (args.username, args.password) {
+    let (expected_auth, expected_username) = if let (Some(u), Some(p)) = (args.username, args.password) {
         use base64::{Engine as _, engine::general_purpose::STANDARD};
-        Some(format!("Basic {}", STANDARD.encode(format!("{}:{}", u, p))))
+        (Some(format!("Basic {}", STANDARD.encode(format!("{}:{}", &u, p)))), Some(u))
     } else {
-        None
+        (None, None)
     };
 
-    let state = Arc::new(AppState { root: root.clone(), expected_auth });
+    let state = Arc::new(AppState { root: root.clone(), expected_auth, expected_username });
 
     let app = Router::new()
         .route("/{*path}", any(handle_git_cgi))
@@ -117,6 +118,9 @@ async fn handle_git_cgi(
     cmd.env("QUERY_STRING", query_string);
     if !content_type.is_empty() {
         cmd.env("CONTENT_TYPE", content_type);
+    }
+    if let Some(username) = &state.expected_username {
+        cmd.env("REMOTE_USER", username);
     }
 
     cmd.stdin(std::process::Stdio::piped());
